@@ -2,9 +2,9 @@
 
 ## Steps
 
-### Docker Setup
+### Docker Setup (Run in project terminal)
 ```
-docker run -it -p 5901:5901 -p 6901:6901 -p8888:8888 -e VNC_PW=password andkram/malmo
+docker run -it -p 5901:5901 -p 6901:6901 -p 8888:8888 -e VNC_PW=password -v $(pwd):/home/malmo/cs175 andkram/malmo
 ```
 
 ### Connect to Docker Image Browser
