@@ -20,3 +20,8 @@ Copy/paste this URL into your browser when you connect for the first time,
     to login with a token:
         http://0.0.0.0:8888/?token=1c6390221431ca75146946c52e253f063431b6488420bbac
 ```
+
+If you are using a container again, just run the container from docker desktop. Then open a terminal and run to get the link.
+```
+jupyter notebook list
+```
