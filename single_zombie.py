@@ -43,7 +43,7 @@ missionXML = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
               <AgentSection mode="Adventure">
                 <Name>MalmoTutorialBot</Name>    
                 <AgentStart>
-                  <Placement x="0.5" y="3" z="5.5" yaw="180"/>
+                  <Placement x="0.5" y="3" z="7.5" yaw="180"/>
                 </AgentStart>
                 <AgentHandlers>
                   <ObservationFromFullStats/>
