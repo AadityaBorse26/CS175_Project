@@ -57,8 +57,11 @@ class MalmoZombieEnv(gym.Env):
         self.action_space = spaces.Discrete(3)
         
         # Observation space: for simplicity, let's say it's a vector of agent stats
-        # You can expand this later to images, coordinates, etc.
-        self.observation_space = spaces.Box(low=0, high=100, shape=(10,), dtype=np.float32)
+        self.observation_space = spaces.Box(
+                                        low=np.array([0, -100, 0, -100, 0], dtype=np.float32),
+                                        high=np.array([20, 100, 256, 100, 1], dtype=np.float32),
+                                        dtype=np.float32
+                                    )
         
         # Create Malmo agent host
         self.agent_host = MalmoPython.AgentHost()
@@ -66,7 +69,7 @@ class MalmoZombieEnv(gym.Env):
         # Mission XML (your provided one)
         self.mission_xml = missionXML
         
-    def spawn_zombie_in_front(self, distance=5):
+    def spawn_zombie_in_front(self, distance=8):
         # Wait for at least one observation
         world_state = self.agent_host.getWorldState()
         while not world_state.observations:
@@ -166,7 +169,7 @@ class MalmoZombieEnv(gym.Env):
         return self._get_observation(self.agent_host.getWorldState())
     
     def _get_observation(self, world_state):
-        obs = np.zeros(4, dtype=np.float32)
+        obs = np.zeros(5, dtype=np.float32)
 
         if world_state.observations:
             obs_text = world_state.observations[-1].text
@@ -183,6 +186,12 @@ class MalmoZombieEnv(gym.Env):
                     obs[1] = ent.get("x", 0)
                     obs[2] = ent.get("y", 0)
                     obs[3] = ent.get("z", 0)
+                    obs[4] = 1
                     break  # Only consider the first zombie found
-        print(obs)
         return obs
+    
+    def render(self, mode='human'):
+        pass  # Could add a rendering function if needed
+    
+    def close(self):
+        pass  # Clean up if needed
