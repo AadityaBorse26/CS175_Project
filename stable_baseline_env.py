@@ -38,6 +38,11 @@ missionXML = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
                 </AgentStart>
                 <AgentHandlers>
                   <ObservationFromFullStats/>
+                  
+                  <ObservationFromNearbyEntities>
+                     <Range name="entities" xrange="10" yrange="2" zrange="10" />
+                  </ObservationFromNearbyEntities>
+                  
                   <ContinuousMovementCommands turnSpeedDegs="180"/>
                   <ChatCommands/>
                 </AgentHandlers>
@@ -60,9 +65,6 @@ class MalmoZombieEnv(gym.Env):
         
         # Mission XML (your provided one)
         self.mission_xml = missionXML
-        
-        # Other internal state variables
-        self._init_mission()
         
     def spawn_zombie_in_front(self, distance=5):
         # Wait for at least one observation
@@ -97,13 +99,18 @@ class MalmoZombieEnv(gym.Env):
         self.agent_host.sendCommand(summon_cmd)
     
     def _init_mission(self):
-        # Wait for any previous mission to finish
-        world_state = self.agent_host.getWorldState()
-        while world_state.is_mission_running:
-            print("Waiting for previous mission to end...")
-            time.sleep(1)
+        # Check and wait for any previous mission to end
+        print("Checking for previous missions...")
+        for _ in range(10): 
             world_state = self.agent_host.getWorldState()
-
+            if not world_state.is_mission_running:
+                break
+            print("Previous mission running. Sending 'quit'...")
+            self.agent_host.sendCommand("quit")
+            time.sleep(1)
+        else:
+            print("Timeout waiting for previous mission to end.")
+        
         mission_spec = MalmoPython.MissionSpec(self.mission_xml, True)
         mission_record = MalmoPython.MissionRecordSpec()
         max_retries = 3
@@ -128,12 +135,12 @@ class MalmoZombieEnv(gym.Env):
 
     def step(self, action):
         # Translate Gym action into Malmo commands
-#         if action == 0:
-#             self.agent_host.sendCommand("turn -1")  # turn left
-#         elif action == 1:
-#             self.agent_host.sendCommand("turn 1")   # turn right
-#         elif action == 2:
-#             self.agent_host.sendCommand("attack 1") # attack
+        if action == 0:
+            self.agent_host.sendCommand("turn -1")  # turn left
+        elif action == 1:
+            self.agent_host.sendCommand("turn 1")   # turn right
+        elif action == 2:
+            self.agent_host.sendCommand("attack 1") # attack
         
         time.sleep(0.2)  # small delay for command effect
         
@@ -159,21 +166,23 @@ class MalmoZombieEnv(gym.Env):
         return self._get_observation(self.agent_host.getWorldState())
     
     def _get_observation(self, world_state):
-        # Simplified: return a dummy vector (replace with real agent stats parsing)
-        # For example, you can parse the full stats observation JSON here.
-        obs = np.zeros(10, dtype=np.float32)
+        obs = np.zeros(4, dtype=np.float32)
+
         if world_state.observations:
-            import json
-            obs_json = world_state.observations[-1].text
-            obs_dict = json.loads(obs_json)
-            # Extract stats like health, hunger etc if available
-            obs[0] = obs_dict.get('Life', 0)
-            obs[1] = obs_dict.get('FoodLevel', 0)
-            # ... fill other entries as needed
+            obs_text = world_state.observations[-1].text
+            obs_dict = json.loads(obs_text)
+
+            # Agent's life
+            obs[0] = obs_dict.get("Life", 0)
+
+            # Nearby entities
+            entities = obs_dict.get("entities", [])
+            for ent in entities:
+                if ent.get("name") == "Zombie":
+                    # Relative position
+                    obs[1] = ent.get("x", 0)
+                    obs[2] = ent.get("y", 0)
+                    obs[3] = ent.get("z", 0)
+                    break  # Only consider the first zombie found
+        print(obs)
         return obs
-    
-    def render(self, mode='human'):
-        pass  # Could add a rendering function if needed
-    
-    def close(self):
-        pass  # Clean up if needed

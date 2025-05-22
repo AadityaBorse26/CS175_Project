@@ -9,7 +9,7 @@ gym.envs.registration.register(
 # now create an env instance
 env = gym.make('MalmoZombie-v0')
 
-num_episodes = 3  # or any number you want
+num_episodes = 2  # or any number you want
 for episode in range(num_episodes):
     print("Starting episode episode " + str(episode + 1) )
     obs = env.reset()  # starts the mission and gets initial observation
@@ -21,5 +21,6 @@ for episode in range(num_episodes):
     
     if episode == num_episodes - 1:
         print("Episode " + str(episode + 1) + " finished. Done.")
+        break
     else:
         print("Episode " + str(episode + 1) + " finished. Restarting mission...")
