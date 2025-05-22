@@ -54,14 +54,10 @@ class MalmoZombieEnv(gym.Env):
         super(MalmoZombieEnv, self).__init__()
         
         # Action space: discrete 3 actions for example (turn left, turn right, attack)
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Box(low=np.array([-1, 0, 0]), high=np.array([1, 1, 1]), dtype=np.float32)
         
         # Observation space: for simplicity, let's say it's a vector of agent stats
-        self.observation_space = spaces.Box(
-                                        low=np.array([0, -100, 0, -100, 0], dtype=np.float32),
-                                        high=np.array([20, 100, 256, 100, 1], dtype=np.float32),
-                                        dtype=np.float32
-                                    )
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
         
         # Create Malmo agent host
         self.agent_host = MalmoPython.AgentHost()
@@ -137,30 +133,28 @@ class MalmoZombieEnv(gym.Env):
         self.spawn_zombie_in_front()
 
     def step(self, action):
-        # Translate Gym action into Malmo commands
-        if action == 0:
-            self.agent_host.sendCommand("turn -1")  # turn left
-        elif action == 1:
-            self.agent_host.sendCommand("turn 1")   # turn right
-        elif action == 2:
-            self.agent_host.sendCommand("attack 1") # attack
-        
-        time.sleep(0.2)  # small delay for command effect
-        
-        # Stop turning/attacking
+        turn = float(action[0])       # -1 to 1
+        move = float(action[1])       # 0 to 1
+        attack = float(action[2])     # 0 or close to 0/1
+
+        # Send commands to Malmo agent
+        self.agent_host.sendCommand("turn %f" % turn)
+        self.agent_host.sendCommand("move %f" % move)
+        self.agent_host.sendCommand("attack %d" % (1 if attack > 0.5 else 0))
+
+        time.sleep(0.2)  # wait for action effect
+
+        # Stop movement to avoid continuous movement
         self.agent_host.sendCommand("turn 0")
+        self.agent_host.sendCommand("move 0")
         self.agent_host.sendCommand("attack 0")
-        
-        # Get observation (very simplified here)
+
         world_state = self.agent_host.getWorldState()
         obs = self._get_observation(world_state)
-        
-        # Define reward (example: 0 for now)
-        reward = 0.0
-        
-        # Check if done
+
+        reward = 0.0  # define your reward function here
         done = not world_state.is_mission_running
-        
+
         return obs, reward, done, {}
     
     def reset(self):
@@ -188,6 +182,7 @@ class MalmoZombieEnv(gym.Env):
                     obs[3] = ent.get("z", 0)
                     obs[4] = 1
                     break  # Only consider the first zombie found
+        print(obs)
         return obs
     
     def render(self, mode='human'):
