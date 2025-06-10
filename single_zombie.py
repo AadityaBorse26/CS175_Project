@@ -6,21 +6,23 @@ gym.envs.registration.register(
     entry_point='stable_baseline_env:MalmoZombieEnv'
 )
 
-# now create an env instance
-env = gym.make('MalmoZombie-v0')
+def test_env(num_episodes=2):
+    env = gym.make('MalmoZombie-v0')
+    
+    for episode in range(num_episodes):
+        print("Starting episode " + str(episode + 1))
+        obs = env.reset()
+        done = False
+        
+        while not done:
+            action = env.action_space.sample()
+            obs, reward, done, info = env.step(action)
+        
+        if episode == num_episodes - 1:
+            print("Episode " + str(episode + 1) + " finished. Done.")
+            break
+        else:
+            print("Episode " + str(episode + 1) + " finished. Restarting mission...")
 
-num_episodes = 2  # or any number you want
-for episode in range(num_episodes):
-    print("Starting episode episode " + str(episode + 1) )
-    obs = env.reset()  # starts the mission and gets initial observation
-    done = False
-    
-    while not done:
-        action = env.action_space.sample()
-        obs, reward, done, info = env.step(action)
-    
-    if episode == num_episodes - 1:
-        print("Episode " + str(episode + 1) + " finished. Done.")
-        break
-    else:
-        print("Episode " + str(episode + 1) + " finished. Restarting mission...")
+if __name__ == "__main__":
+    test_env()

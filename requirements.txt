@@ -1,0 +1,20 @@
+# Core dependencies for Malmo Zombie RL Project
+
+# Reinforcement Learning
+gym>=0.21.0
+stable-baselines>=2.10.0
+
+# Deep Learning
+torch>=1.9.0
+numpy>=1.21.0
+
+# Visualization
+matplotlib>=3.3.0
+
+# Project Malmo (Minecraft AI)
+# Note: MalmoPython needs to be installed separately
+# See: https://github.com/microsoft/malmo
+
+# Optional dependencies for enhanced functionality
+tensorboard>=2.7.0
+tqdm>=4.62.0 

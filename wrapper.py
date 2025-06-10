@@ -1,3 +1,10 @@
+"""
+Reinforcement Learning Wrapper for Malmo Zombie Environment
+
+This module provides wrappers and training utilities for the Malmo zombie fighting environment.
+It includes reward shaping, logging callbacks, and training functions for PPO2 and SAC agents.
+"""
+
 import gym
 import numpy as np
 from stable_baselines import PPO2, SAC
@@ -6,23 +13,58 @@ from stable_baselines.common.vec_env import DummyVecEnv
 from stable_baselines.common.callbacks import BaseCallback
 from stable_baseline_env import MalmoZombieEnv
 
-# Register your environment
+# Constants
+APPROACH_BONUS = 0.3
+RETREAT_PENALTY = -0.1
+CLOSE_DISTANCE_BONUS = 3.0
+MEDIUM_DISTANCE_BONUS = 1.5
+FAR_DISTANCE_BONUS = 0.5
+CLOSE_ATTACK_BONUS = 5.0
+MEDIUM_ATTACK_BONUS = 1.0
+FAR_ATTACK_PENALTY = -1.0
+FACE_DIRECT_BONUS = 1.0
+FACE_ROUGH_BONUS = 0.5
+FACE_SOME_BONUS = 0.2
+NOT_FACE_PENALTY = -0.1
+ZOMBIE_KILL_BONUS = 100.0
+CONTINUE_SUCCESS_BONUS = 10.0
+NO_ZOMBIE_PENALTY = -0.5
+TIME_PENALTY = -0.01
+
+VERY_CLOSE = 2.0
+CLOSE = 4.0
+MODERATE = 6.0
+CLOSE_ATTACK = 2.5
+MEDIUM_ATTACK = 4.0
+
+DIRECT_ANGLE = 30
+ROUGH_ANGLE = 60
+SOME_ANGLE = 90
+
+# Register environment
 gym.envs.registration.register(
     id='MalmoZombie-v0',
     entry_point='stable_baseline_env:MalmoZombieEnv'
 )
 
 class ZombieRewardWrapper(gym.Wrapper):
-    """Wrapper that adds meaningful rewards to the zombie environment"""
+    """
+    Wrapper that adds meaningful rewards to the zombie environment.
+    
+    This wrapper implements a sophisticated reward function that encourages
+    the agent to approach zombies, face them, and attack at appropriate distances.
+    """
     
     def __init__(self, env):
+        """Initialize the reward wrapper."""
         super().__init__(env)
         self.prev_zombie_distance = None
         self.steps_taken = 0
-        self.zombie_was_present = False  # Track if zombie was previously visible
-        self.zombie_killed = False       # Track if zombie has been killed
+        self.zombie_was_present = False
+        self.zombie_killed = False
         
     def step(self, action):
+        """Execute one step in the environment with custom reward calculation."""
         obs, reward, done, info = self.env.step(action)
         self.steps_taken += 1
         
@@ -34,94 +76,119 @@ class ZombieRewardWrapper(gym.Wrapper):
     def _calculate_reward(self, obs, action):
         reward = 0.0
         
-        if obs[5] == 1:  # Zombie present (assuming yaw at obs[1])
-            self.zombie_was_present = True  # Mark that we've seen the zombie
+        if obs[5] == 1:  # Zombie present
+            self.zombie_was_present = True
             
-            # Extract data - now with yaw at obs[1]
-            agent_yaw = obs[1]  # Agent's yaw angle
-            zombie_pos = obs[2:5]  # Zombie x, y, z coordinates
+            # Extract data
+            agent_yaw = obs[1]
+            zombie_pos = obs[2:5]
             distance = np.linalg.norm(zombie_pos)
             
             # Reward for approaching zombie
-            if self.prev_zombie_distance is not None:
-                if distance < self.prev_zombie_distance:
-                    reward += 0.3  # Approaching zombie
-                elif distance > self.prev_zombie_distance:
-                    reward -= 0.1  # Moving away from zombie
-            
-            self.prev_zombie_distance = distance
-            
-            # Distance-based rewards
-            if distance < 2.0:
-                reward += 3.0    # Very close - excellent
-            elif distance < 4.0:
-                reward += 1.5    # Close - good
-            elif distance < 6.0:
-                reward += 0.5    # Moderate distance - okay
+            reward += self._calculate_distance_reward(distance)
             
             # Attack rewards
-            if action[2] > 0.5:  # Attacking
-                if distance < 2.5:
-                    reward += 5.0    # Attack at close range - excellent
-                elif distance < 4.0:
-                    reward += 1.0    # Attack at medium range - okay
-                else:
-                    reward -= 1.0    # Attack at long range - bad
+            reward += self._calculate_attack_reward(action, distance)
             
-            # Bonus for facing zombie (using yaw data)
-            zombie_x, zombie_z = zombie_pos[0], zombie_pos[2]  # Ignore Y for angle calc
-            
-            # Calculate angle to zombie
-            angle_to_zombie = np.degrees(np.arctan2(-zombie_x, zombie_z))  # Minecraft coordinate system
-            
-            # Normalize angles to [0, 360)
-            angle_to_zombie = (angle_to_zombie + 360) % 360
-            agent_yaw_normalized = (agent_yaw + 360) % 360
-            
-            # Calculate angular difference
-            angle_diff = abs(angle_to_zombie - agent_yaw_normalized)
-            if angle_diff > 180:
-                angle_diff = 360 - angle_diff
-            
-            # Reward for facing zombie (smaller angle difference = better)
-            if angle_diff < 30:      # Facing directly at zombie
-                reward += 1.0
-            elif angle_diff < 60:    # Roughly facing zombie
-                reward += 0.5
-            elif angle_diff < 90:    # Somewhat facing zombie
-                reward += 0.2
-            else:                    # Not facing zombie
-                reward -= 0.1
+            # Bonus for facing zombie
+            reward += self._calculate_facing_reward(agent_yaw, zombie_pos)
             
         else:
             # No zombie visible
-            if self.zombie_was_present and not self.zombie_killed:
-                # Zombie disappeared after being present - likely killed!
-                print("ZOMBIE KILLED! Maximum reward!")
-                reward += 100.0  # HUGE reward for killing zombie
-                self.zombie_killed = True
-            elif not self.zombie_was_present:
-                # Haven't found zombie yet
-                reward -= 0.5  # Penalty for not finding zombie
-            elif self.zombie_killed:
-                # Zombie already killed, maintain high reward
-                reward += 10.0  # Continue rewarding success
+            reward += self._calculate_no_zombie_reward()
             
-            self.prev_zombie_distance = None
-        
-        # Smaller time penalty since we want to reward success more
-        reward -= 0.01
+        # Time penalty
+        reward += TIME_PENALTY
         
         return reward
     
+    def _calculate_distance_reward(self, distance):
+        """Calculate reward based on distance to zombie."""
+        reward = 0.0
+        
+        if self.prev_zombie_distance is not None:
+            if distance < self.prev_zombie_distance:
+                reward += APPROACH_BONUS
+            elif distance > self.prev_zombie_distance:
+                reward += RETREAT_PENALTY
+        
+        self.prev_zombie_distance = distance
+        
+        # Distance-based rewards
+        if distance < VERY_CLOSE:
+            reward += CLOSE_DISTANCE_BONUS
+        elif distance < CLOSE:
+            reward += MEDIUM_DISTANCE_BONUS
+        elif distance < MODERATE:
+            reward += FAR_DISTANCE_BONUS
+        
+        return reward
+    
+    def _calculate_attack_reward(self, action, distance):
+        """Calculate reward for attack actions."""
+        reward = 0.0
+        
+        if action[2] > 0.5:  # Attacking
+            if distance < CLOSE_ATTACK:
+                reward += CLOSE_ATTACK_BONUS
+            elif distance < MEDIUM_ATTACK:
+                reward += MEDIUM_ATTACK_BONUS
+            else:
+                reward += FAR_ATTACK_PENALTY
+        
+        return reward
+    
+    def _calculate_facing_reward(self, agent_yaw, zombie_pos):
+        """Calculate reward for facing the zombie."""
+        zombie_x, zombie_z = zombie_pos[0], zombie_pos[2]
+        
+        # Calculate angle to zombie
+        angle_to_zombie = np.degrees(np.arctan2(-zombie_x, zombie_z))
+        
+        # Normalize angles to [0, 360)
+        angle_to_zombie = (angle_to_zombie + 360) % 360
+        agent_yaw_normalized = (agent_yaw + 360) % 360
+        
+        # Calculate angular difference
+        angle_diff = abs(angle_to_zombie - agent_yaw_normalized)
+        if angle_diff > 180:
+            angle_diff = 360 - angle_diff
+        
+        # Reward for facing zombie
+        if angle_diff < DIRECT_ANGLE:
+            return FACE_DIRECT_BONUS
+        elif angle_diff < ROUGH_ANGLE:
+            return FACE_ROUGH_BONUS
+        elif angle_diff < SOME_ANGLE:
+            return FACE_SOME_BONUS
+        else:
+            return NOT_FACE_PENALTY
+    
+    def _calculate_no_zombie_reward(self):
+        """Calculate reward when no zombie is visible."""
+        if self.zombie_was_present and not self.zombie_killed:
+            # Zombie disappeared after being present - likely killed!
+            print("ZOMBIE KILLED! Maximum reward!")
+            self.zombie_killed = True
+            return ZOMBIE_KILL_BONUS
+        elif not self.zombie_was_present:
+            # Haven't found zombie yet
+            return NO_ZOMBIE_PENALTY
+        elif self.zombie_killed:
+            # Zombie already killed, maintain high reward
+            return CONTINUE_SUCCESS_BONUS
+        
+        return 0.0
+    
     def reset(self):
+        """Reset the wrapper state."""
         self.prev_zombie_distance = None
         self.steps_taken = 0
         self.zombie_was_present = False
         self.zombie_killed = False
         return self.env.reset()
 
-# Custom callback for logging (SB2 style)
+
 class LoggingCallback(BaseCallback):
     def __init__(self, verbose=0):
         super(LoggingCallback, self).__init__(verbose)
@@ -129,6 +196,7 @@ class LoggingCallback(BaseCallback):
         self.episode_lengths = []
         
     def _on_step(self):
+        """Log episode information when episode ends."""
         # Check if episode is done
         if self.locals.get('dones', [False])[0]:
             # Log episode info
@@ -142,10 +210,12 @@ class LoggingCallback(BaseCallback):
         
         return True
 
+
 def create_wrapped_env():
     """Create the wrapped environment"""
     base_env = gym.make('MalmoZombie-v0')
     return ZombieRewardWrapper(base_env)
+
 
 def train_ppo2_agent():
     """Train a PPO2 agent using Stable-Baselines 2"""
@@ -156,16 +226,16 @@ def train_ppo2_agent():
     
     # Create the PPO2 model
     model = PPO2(
-        MlpPolicy,              # Policy type
+        MlpPolicy,
         env,
-        verbose=1,              # Print training progress
-        learning_rate=3e-4,     # Learning rate
-        n_steps=128,            # Steps per update (smaller for SB2)
-        nminibatches=4,         # Number of minibatches
-        noptepochs=4,          # Number of optimization epochs
-        gamma=0.99,            # Discount factor
-        gae_lambda=0.95,       # GAE parameter
-        cliprange=0.2,         # PPO clipping parameter
+        verbose=1,
+        learning_rate=3e-4,
+        n_steps=128,
+        nminibatches=4,
+        noptepochs=4,
+        gamma=0.99,
+        gae_lambda=0.95,
+        cliprange=0.2,
         tensorboard_log="./ppo2_malmo_tensorboard/"
     )
     
@@ -184,8 +254,9 @@ def train_ppo2_agent():
     
     return model
 
+
 def train_sac_agent():
-    """Train a SAC agent using Stable-Baselines 2"""
+    """Train a SAC agent using Stable-Baselines 2."""
     print("Training SAC agent with Stable-Baselines 2...")
     
     env = DummyVecEnv([create_wrapped_env])
@@ -195,10 +266,10 @@ def train_sac_agent():
         env,
         verbose=1,
         learning_rate=3e-4,
-        buffer_size=50000,      # Replay buffer size (smaller for SB2)
-        batch_size=64,          # Batch size
-        tau=0.005,             # Soft update coefficient
-        gamma=0.99,            # Discount factor
+        buffer_size=50000,
+        batch_size=64,
+        tau=0.005,
+        gamma=0.99,
         tensorboard_log="./sac_malmo_tensorboard/"
     )
     
@@ -214,8 +285,16 @@ def train_sac_agent():
     
     return model
 
+
 def test_trained_agent(model_path, algorithm="PPO2", num_episodes=5):
-    """Test a trained agent"""
+    """
+    Test a trained agent.
+    
+    Args:
+        model_path: Path to the saved model
+        algorithm: Algorithm type ("PPO2" or "SAC")
+        num_episodes: Number of episodes to test
+    """
     print("Testing {} agent...".format(algorithm))
     
     # Load the trained model
@@ -250,8 +329,9 @@ def test_trained_agent(model_path, algorithm="PPO2", num_episodes=5):
         print("Episode {} finished. Total reward: {:.2f}, Steps: {}\n".format(
             episode + 1, total_reward, step_count))
 
-# Main training script
-if __name__ == "__main__":
+
+def main():
+    """Main training script."""
     # Choose algorithm
     algorithm = "PPO2"  # or "SAC"
     
@@ -270,3 +350,7 @@ if __name__ == "__main__":
         test_trained_agent("sac_malmo_zombie", "SAC", num_episodes=3)
     
     print("Training and testing completed!")
+
+
+if __name__ == "__main__":
+    main()
