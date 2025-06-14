@@ -8,9 +8,16 @@ import matplotlib.pyplot as plt
 import os
 import time
 
+# Simpler model
 gym.envs.registration.register(
     id='MalmoZombie-v0',
     entry_point='stable_baseline_env:MalmoZombieEnv'
+)
+
+# More complex model
+gym.envs.registration.register(
+    id='MalmoZombie-v1',
+    entry_point='stable_baseline_env_2:MalmoZombieEnvV1'
 )
 
 # Improved Hyperparameters
